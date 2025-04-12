@@ -1,0 +1,82 @@
+volumes:
+  postgres_data:
+    name: postgres_data
+
+networks:
+  rag_net:
+    ipam:
+      driver: default
+  ollama-webui-docker_servnet:
+    external: true
+
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    # profiles: [postgres]
+    restart: unless-stopped
+    env_file:
+      - ./env/postgres.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c max_connections=1024
+    networks:
+      - rag_net
+
+  graph_clustering:
+    image: ragtoriches/cluster-prod
+    restart: unless-stopped
+    #ports:
+    #  - "7276:7276"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://graph_clustering:7276/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+     - rag_net
+     - ollama-webui-docker_servnet
+
+  r2r:
+    image: sciphiai/r2r:latest
+    restart: unless-stopped
+    ports:
+      - "7272:7272"
+    env_file:
+      - ./env/r2r.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://r2r:7272/v3/health"]
+      interval: 6s
+      timeout: 5s
+      retries: 5
+
+    volumes:
+      - ./user_configs:/app/user_configs
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+     - rag_net
+     - ollama-webui-docker_servnet
+
+  r2r-dashboard:
+    image: sciphiai/r2r-dashboard:1.0.3
+    restart: unless-stopped
+    env_file:
+      - ./env/r2r-dashboard.env
+    ports:
+      - "7273:3000"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks:
+     - rag_net
+     - ollama-webui-docker_servnet
